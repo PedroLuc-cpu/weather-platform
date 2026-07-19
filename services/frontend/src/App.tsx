@@ -1,13 +1,14 @@
 import "./App.css";
-import { AIInsights } from "./components/ai-insights";
+import { ThemeProvider } from "next-themes";
 import Dashboard from "./pages/dashbord";
+import { Toaster } from "@/components/ui/sonner";
 
 function App() {
   return (
-    <div>
+    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
       <Dashboard />
-      <AIInsights />
-    </div>
+      <Toaster position="bottom-right" richColors />
+    </ThemeProvider>
   );
 }
 

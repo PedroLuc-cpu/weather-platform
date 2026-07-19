@@ -1,7 +1,7 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --silent
+RUN npm install --silent
 
 FROM node:20-alpine AS builder
 WORKDIR /app
@@ -14,4 +14,5 @@ WORKDIR /app
 COPY --from=builder /app/dist ./dist
 COPY --from=deps /app/node_modules ./node_modules
 ENV NODE_ENV=production
+EXPOSE 3000
 CMD ["node", "dist/main.js"]
