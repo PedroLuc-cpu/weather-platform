@@ -15,6 +15,9 @@ export class Weather {
   longitude: number;
 
   @Prop()
+  location_name: string;
+
+  @Prop()
   timezone: string;
 
   @Prop({ type: Object })

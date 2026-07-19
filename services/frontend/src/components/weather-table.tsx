@@ -21,6 +21,7 @@ type WeatherRecord = {
   };
   latitude: number;
   longitude: number;
+  location_name?: string;
   createdAt: string;
 };
 
@@ -106,8 +107,8 @@ export function WeatherTable({ records, isLoading }: WeatherTableProps) {
                     <span className="sm:hidden">{date.short}</span>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">
-                    {record.latitude?.toFixed(2)}°,{" "}
-                    {record.longitude?.toFixed(2)}°
+                    {record.location_name ??
+                      `${record.latitude?.toFixed(2)}°, ${record.longitude?.toFixed(2)}°`}
                   </TableCell>
                   <TableCell>
                     <Badge

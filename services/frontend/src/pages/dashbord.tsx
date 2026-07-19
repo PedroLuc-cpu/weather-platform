@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "next-themes";
+import { toast } from "sonner";
 import {
   Card,
   CardContent,
@@ -26,6 +27,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import {
   Cloud,
   Droplets,
   Wind,
@@ -34,6 +43,7 @@ import {
   Moon,
   CloudRain,
   Thermometer,
+  Radio,
 } from "lucide-react";
 import { WeatherChart } from "@/components/weather-chart";
 import { RainProbabilityChart } from "@/components/rain-probability-chart";
@@ -47,6 +57,7 @@ type WeatherRecord = {
   source: string;
   latitude: number;
   longitude: number;
+  location_name?: string;
   current: {
     temperature: number;
     windspeed: number;
@@ -63,6 +74,14 @@ type WeatherRecord = {
   createdAt: string;
 };
 
+type PagedResponse = {
+  data: WeatherRecord[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+};
+
 function getCondition(code: number) {
   if (code === 0) return { label: "Ensolarado", Icon: Sun };
   if (code <= 3) return { label: "Parcialmente nublado", Icon: Cloud };
@@ -72,33 +91,82 @@ function getCondition(code: number) {
   return { label: "Tempestade", Icon: CloudRain };
 }
 
+const SSE_URL = `${api.defaults.baseURL}/weather/stream`;
+
 export default function Dashboard() {
   const [timeRange, setTimeRange] = useState("12h");
+  const [page, setPage] = useState(1);
+  const [liveStatus, setLiveStatus] = useState<"connecting" | "live" | "offline">("connecting");
   const { theme, setTheme } = useTheme();
+  const queryClient = useQueryClient();
 
-  const { data: records, isLoading } = useQuery<WeatherRecord[]>({
-    queryKey: ["weather"],
+  // Chart data — last 24 records flat for the cards + charts
+  const { data: chartResponse, isLoading: chartLoading } = useQuery<PagedResponse>({
+    queryKey: ["weather-chart"],
     queryFn: async () => {
-      const { data } = await api.get<WeatherRecord[]>("/weather?limit=50");
+      const { data } = await api.get<PagedResponse>("/weather?limit=24&page=1");
       return data;
     },
-    refetchInterval: 60_000,
   });
 
-  const latest = records?.[0];
+  // Paginated table data
+  const { data: tableResponse, isLoading: tableLoading } = useQuery<PagedResponse>({
+    queryKey: ["weather-table", page],
+    queryFn: async () => {
+      const { data } = await api.get<PagedResponse>(`/weather?page=${page}&limit=20`);
+      return data;
+    },
+  });
+
+  // SSE — real-time updates
+  const handleSseMessage = useCallback(
+    (event: MessageEvent) => {
+      try {
+        const payload = JSON.parse(event.data);
+
+        // ignore heartbeat / connection pings
+        if (payload?.type === 'ping' || payload?.type === 'connected') return;
+
+        queryClient.invalidateQueries({ queryKey: ["weather-chart"] });
+        queryClient.invalidateQueries({ queryKey: ["weather-table"] });
+
+        if (payload.alerts?.length) {
+          payload.alerts.forEach((alert: { message: string; type: string }) => {
+            toast.warning(alert.message, { duration: 6000 });
+          });
+        }
+      } catch {
+        // ignore parse errors
+      }
+    },
+    [queryClient],
+  );
+
+  useEffect(() => {
+    const es = new EventSource(SSE_URL);
+    es.onopen = () => setLiveStatus("live");
+    es.onmessage = handleSseMessage;
+    es.onerror = () => setLiveStatus("offline");
+    return () => {
+      es.close();
+      setLiveStatus("offline");
+    };
+  }, [handleSseMessage]);
+
+  const records = chartResponse?.data ?? [];
+  const latest = records[0];
   const limit = timeRange === "12h" ? 12 : 24;
 
-  const chartData =
-    records
-      ?.slice(0, limit)
-      .reverse()
-      .map((r) => ({
-        time: new Date(r.createdAt).toLocaleTimeString("pt-BR", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        temp: r.current?.temperature ?? 0,
-      })) ?? [];
+  const chartData = records
+    .slice(0, limit)
+    .reverse()
+    .map((r) => ({
+      time: new Date(r.createdAt).toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+      temp: r.current?.temperature ?? 0,
+    }));
 
   const rainData = (() => {
     const hourlyRain = latest?.raw?.hourly?.rain;
@@ -120,17 +188,20 @@ export default function Dashboard() {
   const { label: conditionLabel, Icon: ConditionIcon } = getCondition(weathercode);
 
   const location =
-    latest != null
+    latest?.location_name ??
+    (latest != null
       ? `${latest.latitude?.toFixed(2)}°, ${latest.longitude?.toFixed(2)}°`
-      : "São Paulo, BR";
+      : "São Paulo, BR");
 
   const lastUpdate =
     latest != null
       ? new Date(latest.createdAt).toLocaleTimeString("pt-BR")
       : "--:--";
 
+  const isLoading = chartLoading;
+
   const handleExportCSV = () => {
-    if (!records?.length) return;
+    if (!records.length) return;
     const rows = [
       ["Data/Hora", "Temperatura (°C)", "Vento (km/h)", "Condição"],
       ...records.map((r) => [
@@ -144,6 +215,8 @@ export default function Dashboard() {
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     downloadCsv(blob, "clima.csv");
   };
+
+  const totalPages = tableResponse?.pages ?? 1;
 
   return (
     <div className="min-h-screen bg-background">
@@ -160,13 +233,27 @@ export default function Dashboard() {
                   <span className="hidden sm:inline">
                     Dados em tempo real com insights de IA
                   </span>
-                  <span className="sm:hidden">
-                    Atualizado {lastUpdate}
-                  </span>
+                  <span className="sm:hidden">Atualizado {lastUpdate}</span>
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge
+                    variant={liveStatus === "live" ? "default" : "secondary"}
+                    className="text-xs hidden sm:flex items-center gap-1 cursor-default"
+                  >
+                    <Radio className="w-2.5 h-2.5" />
+                    {liveStatus === "live"
+                      ? "Ao vivo"
+                      : liveStatus === "connecting"
+                        ? "Conectando..."
+                        : "Offline"}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>Status da conexão em tempo real</TooltipContent>
+              </Tooltip>
               <Badge variant="outline" className="text-xs hidden sm:flex">
                 {location}
               </Badge>
@@ -251,10 +338,7 @@ export default function Dashboard() {
                       <div className="text-3xl font-semibold tabular-nums">
                         {humidity != null ? `${humidity}%` : "--"}
                       </div>
-                      <Progress
-                        value={humidity ?? 0}
-                        className="h-1.5 mt-2"
-                      />
+                      <Progress value={humidity ?? 0} className="h-1.5 mt-2" />
                     </>
                   )}
                 </CardContent>
@@ -287,9 +371,7 @@ export default function Dashboard() {
                         </span>
                       </div>
                       <Progress
-                        value={
-                          windspeed != null ? Math.min(windspeed, 100) : 0
-                        }
+                        value={windspeed != null ? Math.min(windspeed, 100) : 0}
                         className="h-1.5 mt-2"
                       />
                     </>
@@ -345,8 +427,8 @@ export default function Dashboard() {
                     Temperatura
                   </CardTitle>
                   <CardDescription className="text-xs">
-                    Variação nas últimas{" "}
-                    {timeRange === "12h" ? "12" : "24"} medições
+                    Variação nas últimas {timeRange === "12h" ? "12" : "24"}{" "}
+                    medições
                   </CardDescription>
                 </div>
                 <Tabs value={timeRange} onValueChange={setTimeRange}>
@@ -398,7 +480,7 @@ export default function Dashboard() {
                   Registros de Clima
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  {records?.length ?? 0} registros coletados
+                  {tableResponse?.total ?? 0} registros coletados
                 </CardDescription>
               </div>
               <DropdownMenu>
@@ -407,7 +489,7 @@ export default function Dashboard() {
                     variant="outline"
                     size="sm"
                     className="text-xs h-8"
-                    disabled={!records?.length}
+                    disabled={!records.length}
                   >
                     <Download className="w-3.5 h-3.5 mr-1.5" />
                     Exportar
@@ -422,8 +504,58 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            <WeatherTable records={records} isLoading={isLoading} />
+            <WeatherTable
+              records={tableResponse?.data}
+              isLoading={tableLoading}
+            />
           </CardContent>
+          {totalPages > 1 && (
+            <div className="px-4 pb-4 pt-2 border-t border-border">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (page > 1) setPage(page - 1);
+                      }}
+                      className={page <= 1 ? "pointer-events-none opacity-50" : ""}
+                    />
+                  </PaginationItem>
+                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                    const p = i + 1;
+                    return (
+                      <PaginationItem key={p}>
+                        <PaginationLink
+                          href="#"
+                          isActive={p === page}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setPage(p);
+                          }}
+                        >
+                          {p}
+                        </PaginationLink>
+                      </PaginationItem>
+                    );
+                  })}
+                  <PaginationItem>
+                    <PaginationNext
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (page < totalPages) setPage(page + 1);
+                      }}
+                      className={
+                        page >= totalPages ? "pointer-events-none opacity-50" : ""
+                      }
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
         </Card>
       </main>
     </div>
