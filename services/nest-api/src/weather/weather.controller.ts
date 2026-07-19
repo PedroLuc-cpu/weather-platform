@@ -1,11 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Post,
-  Query,
-  Res,
-} from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { WeatherService } from './weather.service';
@@ -33,7 +26,6 @@ export class WeatherController {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
