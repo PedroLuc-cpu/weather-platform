@@ -1,13 +1,12 @@
 import "./App.css";
-import { AIInsights } from "./components/ai-insights";
+import { ThemeProvider } from "next-themes";
 import Dashboard from "./pages/dashbord";
 
 function App() {
   return (
-    <div>
+    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
       <Dashboard />
-      <AIInsights />
-    </div>
+    </ThemeProvider>
   );
 }
 

@@ -1,4 +1,5 @@
 name: weather-platform
+
 services:
   rabbitmq:
     image: rabbitmq:3-management
@@ -12,12 +13,14 @@ services:
     healthcheck:
       test: ["CMD", "rabbitmqctl", "status"]
       interval: 10s
+      timeout: 5s
       retries: 5
+      start_period: 20s
+    restart: unless-stopped
 
   mongodb:
-    image: mongo
+    image: mongo:8
     container_name: mongodb
-    restart: unless-stopped
     ports:
       - "27017:27017"
     volumes:
@@ -25,7 +28,10 @@ services:
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
+      timeout: 5s
       retries: 5
+      start_period: 10s
+    restart: unless-stopped
 
   nest-api:
     build: ./services/nest-api
@@ -38,11 +44,18 @@ services:
     environment:
       - MONGO_URI=mongodb://mongodb:27017/weatherdb
       - RABBIT_URL=amqp://${RABBIT_USER:-guest}:${RABBIT_PASS:-guest}@rabbitmq:5672/
-      - JWT_SECRET=${JWT_SECRET}
-      - ADMIN_EMAIL=${ADMIN_EMAIL}
-      - ADMIN_PASS=${ADMIN_PASS}
+      - JWT_SECRET=${JWT_SECRET:-changeme}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+      - ADMIN_PASS=${ADMIN_PASS:-123456}
     ports:
       - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/weather?limit=1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
 
   python-producer:
     build: ./services/python-producer
@@ -53,8 +66,8 @@ services:
     environment:
       - RABBIT_URL=amqp://${RABBIT_USER:-guest}:${RABBIT_PASS:-guest}@rabbitmq:5672/
       - QUEUE_NAME=weather.data
-      - LATITUDE=${LATITUDE}
-      - LONGITUDE=${LONGITUDE}
+      - LATITUDE=${LATITUDE:--23.5489}
+      - LONGITUDE=${LONGITUDE:--46.6388}
       - INTERVAL_SEC=${PUBLISH_INTERVAL_SEC:-3600}
     restart: unless-stopped
 
@@ -65,7 +78,7 @@ services:
       rabbitmq:
         condition: service_healthy
       nest-api:
-        condition: service_started
+        condition: service_healthy
     environment:
       - RABBIT_URL=amqp://${RABBIT_USER:-guest}:${RABBIT_PASS:-guest}@rabbitmq:5672/
       - QUEUE_NAME=weather.data
@@ -76,12 +89,13 @@ services:
     build: ./services/frontend
     container_name: frontend
     depends_on:
-      - nest-api
+      nest-api:
+        condition: service_healthy
     environment:
       - VITE_API_URL=http://localhost:3000/api
     ports:
       - "5173:5173"
-    command: npm run dev
+    restart: unless-stopped
 
 volumes:
   mongo_data:

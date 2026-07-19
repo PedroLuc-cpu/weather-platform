@@ -1,15 +1,19 @@
-"use client";
-
+import { Area, AreaChart, XAxis, YAxis } from "recharts";
 import {
-  Area,
-  AreaChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 
-const data = [
+const chartConfig: ChartConfig = {
+  probability: {
+    label: "Chuva",
+    color: "hsl(var(--chart-2))",
+  },
+};
+
+const fallbackData = [
   { time: "12:00", probability: 15 },
   { time: "14:00", probability: 25 },
   { time: "16:00", probability: 45 },
@@ -20,67 +24,59 @@ const data = [
   { time: "02:00", probability: 25 },
 ];
 
-export function RainProbabilityChart() {
+interface RainProbabilityChartProps {
+  data: { time: string; probability: number }[];
+}
+
+export function RainProbabilityChart({ data }: RainProbabilityChartProps) {
+  const chartData = data.length ? data : fallbackData;
+
   return (
-    <ResponsiveContainer width="100%" height={240}>
-      <AreaChart data={data}>
+    <ChartContainer config={chartConfig} className="h-[240px] w-full">
+      <AreaChart data={chartData}>
         <defs>
           <linearGradient id="rainGradient" x1="0" y1="0" x2="0" y2="1">
             <stop
               offset="5%"
-              stopColor="hsl(var(--chart-2))"
+              stopColor="var(--color-probability)"
               stopOpacity={0.3}
             />
             <stop
               offset="95%"
-              stopColor="hsl(var(--chart-2))"
+              stopColor="var(--color-probability)"
               stopOpacity={0}
             />
           </linearGradient>
         </defs>
         <XAxis
           dataKey="time"
-          stroke="hsl(var(--muted-foreground))"
-          fontSize={11}
+          fontSize={10}
           tickLine={false}
           axisLine={false}
+          minTickGap={28}
         />
         <YAxis
-          stroke="hsl(var(--muted-foreground))"
           fontSize={11}
           tickLine={false}
           axisLine={false}
-          tickFormatter={(value) => `${value}%`}
+          tickFormatter={(v) => `${v}%`}
+          width={32}
         />
-        <Tooltip
-          content={({ active, payload }) => {
-            if (active && payload && payload.length) {
-              return (
-                <div className="rounded-lg border border-border bg-card p-2 shadow-sm">
-                  <div className="grid gap-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs text-muted-foreground">
-                        {payload[0].payload.time}
-                      </span>
-                      <span className="text-xs font-semibold text-foreground">
-                        {payload[0].value}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            }
-            return null;
-          }}
+        <ChartTooltip
+          content={
+            <ChartTooltipContent
+              formatter={(value) => [`${value}%`, "Probabilidade"]}
+            />
+          }
         />
         <Area
           type="monotone"
           dataKey="probability"
-          stroke="hsl(var(--chart-2))"
+          stroke="var(--color-probability)"
           fill="url(#rainGradient)"
           strokeWidth={2}
         />
       </AreaChart>
-    </ResponsiveContainer>
+    </ChartContainer>
   );
 }
