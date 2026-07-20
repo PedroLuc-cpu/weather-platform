@@ -1,3 +1,13 @@
+# ------------------------------------------------------------------------------------------------
+# Compose de produção — usado pelo workflow cd.yml na VPS.
+# Diferença em relação a docker-compose.yml (dev): os 4 serviços do monorepo usam `image:`
+# apontando para o GHCR em vez de `build:`, permitindo `docker compose pull` puxar as imagens
+# publicadas por docker-publish.yml sem precisar buildar nada na VPS.
+#
+# Variáveis esperadas no ambiente/.env da VPS:
+#   GHCR_NAMESPACE  -> owner do GHCR (ex: pedroluc-cpu)
+#   IMAGE_TAG       -> tag da imagem a implantar (ex: latest, sha-abc1234, v1.2.3)
+# ------------------------------------------------------------------------------------------------
 name: weather-platform
 
 services:
@@ -34,7 +44,7 @@ services:
     restart: unless-stopped
 
   nest-api:
-    build: ./services/nest-api
+    image: ghcr.io/${GHCR_NAMESPACE}/weather-platform-nest-api:${IMAGE_TAG:-latest}
     container_name: nest-api
     depends_on:
       rabbitmq:
@@ -59,7 +69,7 @@ services:
     restart: unless-stopped
 
   python-producer:
-    build: ./services/python-producer
+    image: ghcr.io/${GHCR_NAMESPACE}/weather-platform-python-producer:${IMAGE_TAG:-latest}
     container_name: python-producer
     depends_on:
       rabbitmq:
@@ -75,7 +85,7 @@ services:
     restart: unless-stopped
 
   go-worker:
-    build: ./services/go-worker
+    image: ghcr.io/${GHCR_NAMESPACE}/weather-platform-go-worker:${IMAGE_TAG:-latest}
     container_name: go-worker
     depends_on:
       rabbitmq:
@@ -89,7 +99,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: ./services/frontend
+    image: ghcr.io/${GHCR_NAMESPACE}/weather-platform-frontend:${IMAGE_TAG:-latest}
     container_name: frontend
     depends_on:
       nest-api:

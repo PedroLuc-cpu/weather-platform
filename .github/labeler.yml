@@ -1,0 +1,73 @@
+# ------------------------------------------------------------------------------------------------
+# Configuração do actions/labeler@v5, usada pelo workflow labeler.yml.
+# Aplica labels em Pull Requests com base nos arquivos alterados.
+# ------------------------------------------------------------------------------------------------
+backend:
+  - changed-files:
+      - any-glob-to-any-file: ["services/nest-api/**"]
+
+frontend:
+  - changed-files:
+      - any-glob-to-any-file: ["services/frontend/**"]
+
+go:
+  - changed-files:
+      - any-glob-to-any-file: ["services/go-worker/**"]
+
+python:
+  - changed-files:
+      - any-glob-to-any-file: ["services/python-producer/**"]
+
+docker:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/Dockerfile"
+          - "**/Dockerfile.*"
+          - "docker-compose*.yml"
+          - ".dockerignore"
+
+infra:
+  - changed-files:
+      - any-glob-to-any-file: ["infra/**"]
+
+database:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/schema*.ts"
+          - "**/*.schema.ts"
+          - "**/migrations/**"
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"
+          - "docs/**"
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.spec.ts"
+          - "**/*.test.ts"
+          - "**/*_test.go"
+          - "**/test/**"
+          - "**/tests/**"
+
+security:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".gitleaks.toml"
+          - "**/security/**"
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: [".github/workflows/**"]
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/package.json"
+          - "**/package-lock.json"
+          - "**/go.mod"
+          - "**/go.sum"
+          - "**/requirements.txt"
+          - ".github/dependabot.yml"

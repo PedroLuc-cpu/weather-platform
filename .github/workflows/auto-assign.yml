@@ -1,0 +1,54 @@
+# ------------------------------------------------------------------------------------------------
+# Workflow: Auto Assign
+# Objetivo: adicionar automaticamente revisores e o autor como assignee em novos Pull Requests.
+# Configuração: lista de revisores lida da variável de repositório/organização
+#               AUTO_ASSIGN_REVIEWERS (usuários separados por vírgula, ex: "alice,bob").
+#               Se a variável não estiver definida, apenas o autor é atribuído como assignee.
+# Eventos: abertura de Pull Requests.
+# ------------------------------------------------------------------------------------------------
+name: Auto Assign
+
+on:
+  pull_request_target:
+    types: [opened, ready_for_review]
+
+concurrency:
+  group: auto-assign-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  assign:
+    name: Assign author & reviewers
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Assign author and configured reviewers
+        uses: actions/github-script@v7
+        env:
+          REVIEWERS: ${{ vars.AUTO_ASSIGN_REVIEWERS }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const pull_number = context.payload.pull_request.number;
+            const author = context.payload.pull_request.user.login;
+
+            await github.rest.issues.addAssignees({
+              owner, repo, issue_number: pull_number, assignees: [author],
+            });
+
+            const raw = process.env.REVIEWERS || "";
+            const reviewers = raw
+              .split(",")
+              .map((r) => r.trim())
+              .filter((r) => r.length > 0 && r !== author);
+
+            if (reviewers.length > 0) {
+              await github.rest.pulls.requestReviewers({
+                owner, repo, pull_number, reviewers,
+              });
+            }

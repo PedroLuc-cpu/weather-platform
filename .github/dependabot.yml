@@ -1,0 +1,117 @@
+# ------------------------------------------------------------------------------------------------
+# Dependabot: mantém dependências atualizadas semanalmente, com atualizações agrupadas por
+# ecossistema para reduzir o número de Pull Requests.
+# ------------------------------------------------------------------------------------------------
+version: 2
+
+updates:
+  # --- Backend (NestJS) ---
+  - package-ecosystem: npm
+    directory: /services/nest-api
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    labels: [dependencies, backend]
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      backend-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # --- Frontend (Vite/React) ---
+  - package-ecosystem: npm
+    directory: /services/frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    labels: [dependencies, frontend]
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      frontend-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # --- Serviço Python ---
+  - package-ecosystem: pip
+    directory: /services/python-producer
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    labels: [dependencies, python]
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      python-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # --- Microserviço Go ---
+  - package-ecosystem: gomod
+    directory: /services/go-worker
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    labels: [dependencies, go]
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      go-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # --- GitHub Actions (todos os workflows) ---
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    labels: [dependencies, ci]
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # --- Docker (imagens base de cada serviço) ---
+  - package-ecosystem: docker
+    directory: /services/nest-api
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: [dependencies, docker, backend]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: docker
+    directory: /services/frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: [dependencies, docker, frontend]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: docker
+    directory: /services/go-worker
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: [dependencies, docker, go]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: docker
+    directory: /services/python-producer
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: [dependencies, docker, python]
+    commit-message:
+      prefix: "chore(deps)"

@@ -1,0 +1,75 @@
+# ------------------------------------------------------------------------------------------------
+# Workflow: CI Python (python-producer)
+# Objetivo: validar exclusivamente o serviço services/python-producer (formatação, imports,
+#           lint, tipos, testes). Não realiza deploy nem publica imagens.
+# Nota: black/isort/flake8/mypy/pytest não são dependências do projeto (requirements.txt só
+#       tem requests/pika) — são instaladas apenas no runner de CI como ferramental de
+#       qualidade, versões fixas para builds reprodutíveis.
+# Eventos: pull_request e push que tocam services/python-producer/**.
+# ------------------------------------------------------------------------------------------------
+name: CI Python (python-producer)
+
+on:
+  pull_request:
+    branches: [master, development]
+    paths:
+      - "services/python-producer/**"
+      - ".github/workflows/ci-python.yml"
+  push:
+    branches: [master, development]
+    paths:
+      - "services/python-producer/**"
+      - ".github/workflows/ci-python.yml"
+
+concurrency:
+  group: ci-python-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: services/python-producer
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  validate:
+    name: format, lint, typecheck & test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: services/python-producer/requirements.txt
+
+      - name: Install runtime dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install quality tooling
+        run: pip install black==24.10.0 isort==5.13.2 flake8==7.1.1 mypy==1.13.0 pytest==8.3.3
+
+      - name: Format check (black)
+        run: black --check .
+
+      - name: Import order check (isort)
+        run: isort --check-only .
+
+      - name: Lint (flake8)
+        run: flake8 . --max-line-length=100
+
+      - name: Typecheck (mypy)
+        run: mypy . --ignore-missing-imports
+
+      # Tolerante: o serviço ainda não tem testes; roda automaticamente assim que existirem
+      # (pytest retorna exit code 5 quando nenhum teste é coletado).
+      - name: Tests (pytest)
+        run: pytest --maxfail=1 --disable-warnings || [ $? -eq 5 ]

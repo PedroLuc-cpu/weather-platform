@@ -1,0 +1,70 @@
+# ------------------------------------------------------------------------------------------------
+# Workflow: CI Backend (NestJS)
+# Objetivo: validar exclusivamente o serviço services/nest-api (lint, formatação, tipos, testes,
+#           build). Não realiza deploy nem publica artefatos/imagens.
+# Eventos: pull_request e push que tocam services/nest-api/**, restritos às branches de trabalho.
+# ------------------------------------------------------------------------------------------------
+name: CI Backend (NestJS)
+
+on:
+  pull_request:
+    branches: [master, development]
+    paths:
+      - "services/nest-api/**"
+      - ".github/workflows/ci-backend.yml"
+  push:
+    branches: [master, development]
+    paths:
+      - "services/nest-api/**"
+      - ".github/workflows/ci-backend.yml"
+
+# Cancela execuções em andamento da mesma branch/PR quando um novo commit chega.
+concurrency:
+  group: ci-backend-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Permissão mínima: apenas leitura do conteúdo do repositório.
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: services/nest-api
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  validate:
+    name: Lint, format, typecheck, test & build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4 1
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: services/nest-api/package-lock.json
+
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      # Executa o ESLint sem --fix para que problemas de lint quebrem o pipeline.
+      - name: Lint (ESLint)
+        run: npx eslint "{src,apps,libs,test}/**/*.ts" --max-warnings=0
+
+      - name: Prettier check
+        run: npx prettier --check "src/**/*.ts" "test/**/*.ts"
+
+      - name: Typecheck (tsc)
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Unit tests
+        run: npm test -- --ci --reporters=default
+
+      - name: Build
+        run: npm run build

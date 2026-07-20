@@ -1,0 +1,45 @@
+# ------------------------------------------------------------------------------------------------
+# Workflow: Stale
+# Objetivo: marcar e fechar automaticamente Issues e Pull Requests inativos.
+# Eventos: execução agendada diária.
+# ------------------------------------------------------------------------------------------------
+name: Stale
+
+on:
+  schedule:
+    # Todos os dias às 02:00 UTC.
+    - cron: "0 2 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: stale
+  cancel-in-progress: false
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    name: Close stale issues & PRs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          days-before-stale: 30
+          days-before-close: 7
+          stale-issue-label: stale
+          stale-pr-label: stale
+          stale-issue-message: >
+            Esta issue está marcada como inativa por falta de atividade nos últimos 30 dias.
+            Será fechada em 7 dias caso não haja nenhuma atualização.
+          stale-pr-message: >
+            Este Pull Request está marcado como inativo por falta de atividade nos últimos 30 dias.
+            Será fechado em 7 dias caso não haja nenhuma atualização.
+          close-issue-message: Fechado automaticamente por inatividade.
+          close-pr-message: Fechado automaticamente por inatividade.
+          exempt-issue-labels: pinned,security
+          exempt-pr-labels: pinned,security
+          operations-per-run: 100

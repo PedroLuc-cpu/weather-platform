@@ -1,0 +1,89 @@
+# ------------------------------------------------------------------------------------------------
+# Workflow: Docker Publish (GHCR)
+# Objetivo: buildar e publicar as imagens dos 4 serviços no GitHub Container Registry.
+#           Reusável (workflow_call) para que cd.yml e release.yml disparem o mesmo build
+#           sem duplicar lógica ("Build → Push GHCR" fica isolado neste único arquivo).
+# Eventos: push em master, tags "v*.*.*" e chamadas de outros workflows (workflow_call).
+# Tags geradas: latest (apenas branch padrão), nome da branch, sha curto e versão semver (tags).
+# ------------------------------------------------------------------------------------------------
+name: Docker Publish (GHCR)
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*.*.*"]
+    paths:
+      - "services/**"
+      - ".github/workflows/docker-publish.yml"
+  workflow_call:
+    outputs:
+      image-tag-sha:
+        description: "Tag curta baseada no SHA usada para o deploy (ex: sha-abc1234)"
+        value: ${{ jobs.publish.outputs.image-tag-sha }}
+
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ${{ github.repository_owner }}
+
+jobs:
+  publish:
+    name: Build & push ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - nest-api
+          - frontend
+          - go-worker
+          - python-producer
+    outputs:
+      image-tag-sha: sha-${{ steps.short-sha.outputs.sha }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Short SHA
+        id: short-sha
+        run: echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags & labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/weather-platform-${{ matrix.service }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=sha,prefix=sha-,format=short
+            type=semver,pattern={{version}}
+
+      - name: Build & push ${{ matrix.service }}
+        uses: docker/build-push-action@v6
+        with:
+          context: services/${{ matrix.service }}
+          file: services/${{ matrix.service }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
