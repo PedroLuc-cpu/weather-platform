@@ -1,0 +1,33 @@
+# ------------------------------------------------------------------------------------------------
+# Workflow: Greetings
+# Objetivo: enviar uma mensagem automática de boas-vindas na primeira Issue e no primeiro
+#           Pull Request de um contribuidor.
+# Eventos: abertura de issues e pull requests.
+# ------------------------------------------------------------------------------------------------
+name: Greetings
+
+on:
+  issues:
+    types: [opened]
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  greeting:
+    name: Greet first-time contributor
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/first-interaction@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          issue-message: >
+            Obrigado por abrir sua primeira issue neste projeto! 🎉
+            Nossa equipe vai analisar em breve.
+          pr-message: >
+            Obrigado por abrir seu primeiro Pull Request! 🚀
+            Certifique-se de que o título segue Conventional Commits e que a CI passou.

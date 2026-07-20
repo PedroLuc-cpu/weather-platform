@@ -1,0 +1,59 @@
+# ------------------------------------------------------------------------------------------------
+# Workflow: Docker Build (validação)
+# Objetivo: garantir que todos os Dockerfiles do monorepo continuam buildando com sucesso.
+#           NÃO publica nenhuma imagem — build local apenas, usado como gate de PR.
+# Eventos: pull_request e push que tocam qualquer Dockerfile ou o código dos serviços.
+# ------------------------------------------------------------------------------------------------
+name: Docker Build
+
+on:
+  pull_request:
+    branches: [master, development]
+    paths:
+      - "services/**"
+      - "docker-compose*.yml"
+      - ".github/workflows/docker-build.yml"
+  push:
+    branches: [master, development]
+    paths:
+      - "services/**"
+      - "docker-compose*.yml"
+      - ".github/workflows/docker-build.yml"
+
+concurrency:
+  group: docker-build-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.service }} image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - nest-api
+          - frontend
+          - go-worker
+          - python-producer
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.service }} (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: services/${{ matrix.service }}
+          file: services/${{ matrix.service }}/Dockerfile
+          push: false
+          load: false
+          tags: weather-platform-${{ matrix.service }}:ci
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}

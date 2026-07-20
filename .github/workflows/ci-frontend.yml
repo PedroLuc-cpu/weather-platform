@@ -1,0 +1,75 @@
+# ------------------------------------------------------------------------------------------------
+# Workflow: CI Frontend (Vite + React + TypeScript)
+# Objetivo: validar exclusivamente o serviço services/frontend (lint, tipos, testes, build).
+#           Não publica imagens Docker nem faz deploy.
+# Nota: o projeto ainda não possui test runner configurado; o passo de testes usa
+#       "--if-present" para rodar automaticamente assim que um for adicionado, sem quebrar
+#       o pipeline enquanto isso não acontece.
+# Eventos: pull_request e push que tocam services/frontend/**.
+# ------------------------------------------------------------------------------------------------
+name: CI Frontend (Next.js/Vite)
+
+on:
+  pull_request:
+    branches: [master, development]
+    paths:
+      - "services/frontend/**"
+      - ".github/workflows/ci-frontend.yml"
+  push:
+    branches: [master, development]
+    paths:
+      - "services/frontend/**"
+      - ".github/workflows/ci-frontend.yml"
+
+concurrency:
+  group: ci-frontend-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: services/frontend
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  validate:
+    name: Lint, typecheck, test & build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: services/frontend/package-lock.json
+
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      - name: Lint (ESLint)
+        run: npm run lint
+
+      # O projeto ainda não tem Prettier configurado (sem devDependency/.prettierrc próprio).
+      # Roda com uma versão fixa via npx e não quebra o pipeline até que a configuração exista,
+      # evitando falsos positivos em massa sobre código nunca formatado por essa ferramenta.
+      - name: Prettier check
+        continue-on-error: true
+        run: npx --yes prettier@3.4.2 --check "src/**/*.{ts,tsx,css}"
+
+      - name: Typecheck (tsc)
+        run: npx tsc -b --noEmit
+
+      # Roda testes apenas se um script "test" existir no package.json.
+      - name: Unit tests (if configured)
+        run: npm test --if-present
+
+      - name: Build
+        run: npm run build

@@ -1,0 +1,107 @@
+# ------------------------------------------------------------------------------------------------
+# Workflow: Release
+# Objetivo: ao criar uma tag "vX.Y.Z", publicar as imagens versionadas no GHCR (via
+#           docker-publish.yml reusável), empacotar artefatos de build e criar uma GitHub
+#           Release com release notes automáticas baseadas em Conventional Commits.
+# Eventos: push de tags "v*.*.*".
+# ------------------------------------------------------------------------------------------------
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish-images:
+    name: Publish versioned images
+    uses: ./.github/workflows/docker-publish.yml
+    secrets: inherit
+
+  build-artifacts:
+    name: Build release artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            services/nest-api/package-lock.json
+            services/frontend/package-lock.json
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: true
+          cache-dependency-path: services/go-worker/go.sum
+
+      - name: Build backend (NestJS)
+        working-directory: services/nest-api
+        run: |
+          npm ci
+          npm run build
+          zip -r ../../nest-api-${{ github.ref_name }}.zip dist package.json package-lock.json
+
+      - name: Build frontend
+        working-directory: services/frontend
+        run: |
+          npm ci
+          npm run build
+          zip -r ../../frontend-${{ github.ref_name }}.zip dist
+
+      - name: Build go-worker (cross-compile)
+        working-directory: services/go-worker
+        run: |
+          go mod download
+          GOOS=linux GOARCH=amd64 go build -o ../../go-worker-${{ github.ref_name }}-linux-amd64 .
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            nest-api-${{ github.ref_name }}.zip
+            frontend-${{ github.ref_name }}.zip
+            go-worker-${{ github.ref_name }}-linux-amd64
+          retention-days: 90
+
+  create-release:
+    name: Create GitHub Release
+    needs: [publish-images, build-artifacts]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: dist-artifacts
+
+      - name: Create release with auto-generated notes
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: dist-artifacts/*
+          fail_on_unmatched_files: true

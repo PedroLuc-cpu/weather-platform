@@ -1,0 +1,97 @@
+# ------------------------------------------------------------------------------------------------
+# Workflow: Trivy Security Scan
+# Objetivo: escanear vulnerabilidades em filesystem/dependências e nas imagens Docker dos 4
+#           serviços, publicando os resultados como SARIF na aba Security do GitHub.
+# Eventos: pull_request, push na branch de produção e execução agendada diária.
+# ------------------------------------------------------------------------------------------------
+name: Trivy Security Scan
+
+on:
+  pull_request:
+    branches: [master, development]
+  push:
+    branches: [master]
+  schedule:
+    # Todos os dias às 04:00 UTC.
+    - cron: "0 4 * * *"
+
+concurrency:
+  group: trivy-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  filesystem-scan:
+    name: Filesystem & dependency scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy (filesystem)
+        uses: aquasecurity/trivy-action@v0.29.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          format: sarif
+          output: trivy-fs-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: 0
+
+      - name: Upload SARIF (filesystem)
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs-results.sarif
+          category: trivy-filesystem
+
+  image-scan:
+    name: Image scan (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [nest-api, frontend, go-worker, python-producer]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for scanning (local only, no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: services/${{ matrix.service }}
+          file: services/${{ matrix.service }}/Dockerfile
+          push: false
+          load: true
+          tags: weather-platform-${{ matrix.service }}:trivy-scan
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      - name: Run Trivy (image)
+        uses: aquasecurity/trivy-action@v0.29.0
+        with:
+          scan-type: image
+          image-ref: weather-platform-${{ matrix.service }}:trivy-scan
+          format: sarif
+          output: trivy-image-${{ matrix.service }}.sarif
+          severity: CRITICAL,HIGH
+          exit-code: 0
+
+      - name: Upload SARIF (image)
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image-${{ matrix.service }}.sarif
+          category: trivy-image-${{ matrix.service }}

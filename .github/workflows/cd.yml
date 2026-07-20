@@ -1,0 +1,88 @@
+# ------------------------------------------------------------------------------------------------
+# Workflow: CD — Deploy to VPS
+# Objetivo: única responsabilidade de implantação. NÃO builda imagens diretamente — delega o
+#           build/push para o workflow reusável docker-publish.yml e depois só faz o deploy.
+# Fluxo: Build (docker-publish.yml) → Push GHCR → SSH VPS → docker compose pull →
+#        docker compose up -d → Health Check → Rollback automático em caso de falha.
+# Eventos: apenas push na branch de produção (master).
+#
+# Secrets esperados:
+#   VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_PORT (opcional, default 22), VPS_PROJECT_PATH
+# ------------------------------------------------------------------------------------------------
+name: CD (Deploy to VPS)
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "services/**"
+      - "docker-compose.prod.yml"
+      - ".github/workflows/cd.yml"
+      - ".github/workflows/docker-publish.yml"
+
+# Nunca cancela um deploy em andamento — evita deixar a VPS em estado intermediário.
+concurrency:
+  group: cd-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    name: Build & push images
+    uses: ./.github/workflows/docker-publish.yml
+    secrets: inherit
+
+  deploy:
+    name: Deploy to VPS
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Nota: "environment.url" não aceita a context "secrets", por isso o host da VPS
+    # (secreto) não é exposto aqui — apenas o nome do ambiente para gates/aprovações.
+    environment:
+      name: production
+    steps:
+      - name: Deploy via SSH (pull, up, health check, rollback on failure)
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          GHCR_NAMESPACE: ${{ github.repository_owner }}
+          NEW_TAG: ${{ needs.build-and-push.outputs.image-tag-sha }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          envs: GHCR_NAMESPACE,NEW_TAG
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.VPS_PROJECT_PATH }}"
+
+            PREV_TAG=$(cat .deployed_tag 2>/dev/null || echo "latest")
+            echo "Deploying tag: $NEW_TAG (previous: $PREV_TAG)"
+
+            export GHCR_NAMESPACE
+            export IMAGE_TAG="$NEW_TAG"
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d
+
+            echo "Waiting for nest-api health check..."
+            for i in $(seq 1 10); do
+              if curl -fsS "http://127.0.0.1:3000/api/weather?limit=1" >/dev/null 2>&1; then
+                echo "$NEW_TAG" > .deployed_tag
+                echo "Deploy successful."
+                docker image prune -f
+                exit 0
+              fi
+              sleep 6
+            done
+
+            echo "Health check failed — rolling back to $PREV_TAG"
+            export IMAGE_TAG="$PREV_TAG"
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d
+            echo "Rollback completed. Failing the job to signal the failed deploy."
+            exit 1

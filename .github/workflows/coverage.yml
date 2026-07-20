@@ -1,0 +1,148 @@
+# ------------------------------------------------------------------------------------------------
+# Workflow: Coverage Report
+# Objetivo: rodar os testes com cobertura para os serviços que têm testes (NestJS e Go) e o
+#           serviço Python quando existirem, publicar os relatórios como artifacts e um resumo
+#           legível no Job Summary. Pronto para integração futura com Codecov (basta configurar
+#           o secret CODECOV_TOKEN — o upload não quebra o pipeline se ele estiver ausente).
+# Eventos: pull_request e push que tocam código dos serviços.
+# ------------------------------------------------------------------------------------------------
+name: Coverage Report
+
+on:
+  pull_request:
+    branches: [master, development]
+    paths:
+      - "services/**"
+      - ".github/workflows/coverage.yml"
+  push:
+    branches: [master, development]
+    paths:
+      - "services/**"
+      - ".github/workflows/coverage.yml"
+
+concurrency:
+  group: coverage-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend-coverage:
+    name: Backend coverage (NestJS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: services/nest-api
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: services/nest-api/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests with coverage
+        run: npm run test:cov
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-backend
+          path: services/nest-api/coverage
+          retention-days: 14
+
+      - name: Upload to Codecov (optional)
+        if: always()
+        continue-on-error: true
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          directory: services/nest-api/coverage
+          flags: backend
+          fail_ci_if_error: false
+
+  go-coverage:
+    name: Go coverage (go-worker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: services/go-worker
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: true
+          cache-dependency-path: services/go-worker/go.sum
+
+      - name: Run tests with coverage
+        run: go test ./... -coverprofile=coverage.out -covermode=atomic
+
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tee coverage-summary.txt
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-go
+          path: services/go-worker/coverage.out
+          retention-days: 14
+
+      - name: Upload to Codecov (optional)
+        if: always()
+        continue-on-error: true
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: services/go-worker/coverage.out
+          flags: go-worker
+          fail_ci_if_error: false
+
+  python-coverage:
+    name: Python coverage (python-producer)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: services/python-producer
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/python-producer/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest==8.3.3 pytest-cov==6.0.0
+
+      # Tolerante: ainda não há testes neste serviço (pytest sai com código 5 quando não
+      # coleta nenhum teste); roda automaticamente assim que existirem.
+      - name: Run tests with coverage
+        run: |
+          pytest --cov=. --cov-report=xml --cov-report=term-missing || [ $? -eq 5 ]
+
+      - name: Upload coverage artifact
+        if: hashFiles('services/python-producer/coverage.xml') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-python
+          path: services/python-producer/coverage.xml
+          retention-days: 14

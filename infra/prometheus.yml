@@ -7,3 +7,7 @@ scrape_configs:
     static_configs:
       - targets: ['nest-api:3000']
     metrics_path: '/api/metrics'
+
+  - job_name: 'docker'
+    static_configs:
+      - targets: ['docker-exporter:9487']

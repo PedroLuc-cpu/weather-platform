@@ -1,0 +1,45 @@
+# ------------------------------------------------------------------------------------------------
+# Workflow: OpenSSF Scorecard
+# Objetivo: avaliar a postura de segurança do repositório (branch protection, actions fixadas,
+#           permissões de token, CI, dependências, etc.) e publicar o resultado como SARIF.
+# Eventos: push na branch de produção e execução agendada semanal.
+# ------------------------------------------------------------------------------------------------
+name: OpenSSF Scorecard
+
+on:
+  push:
+    branches: [master]
+  schedule:
+    # Toda segunda-feira às 06:00 UTC.
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+      id-token: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Run OpenSSF Scorecard
+        uses: ossf/scorecard-action@v2.4.0
+        with:
+          results_file: scorecard-results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: scorecard-results.sarif
+          category: scorecard

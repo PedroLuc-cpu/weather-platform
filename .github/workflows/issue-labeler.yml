@@ -1,0 +1,59 @@
+# ------------------------------------------------------------------------------------------------
+# Workflow: Issue Labeler
+# Objetivo: aplicar labels automaticamente em Issues com base em palavras-chave no título/corpo
+#           (ex: menções a backend, frontend, go, python, docker, security, etc.).
+# Eventos: abertura/edição de Issues.
+# ------------------------------------------------------------------------------------------------
+name: Issue Labeler
+
+on:
+  issues:
+    types: [opened, edited]
+
+concurrency:
+  group: issue-labeler-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  label:
+    name: Apply labels by keyword
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Label issue based on keywords
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const rules = {
+              backend: /\b(nest-?api|nestjs|backend)\b/i,
+              frontend: /\b(frontend|react|vite|ui)\b/i,
+              go: /\b(go-?worker|golang|\bgo\b)\b/i,
+              python: /\b(python|producer|pika)\b/i,
+              docker: /\b(docker|dockerfile|compose)\b/i,
+              infra: /\b(infra|prometheus|grafana|vps|deploy)\b/i,
+              database: /\b(mongo(db)?|database|db)\b/i,
+              documentation: /\b(docs?|documenta[cç][aã]o|readme)\b/i,
+              tests: /\b(test|jest|pytest|coverage)\b/i,
+              security: /\b(security|vulnerab|cve|secret|leak)\b/i,
+              ci: /\b(ci|workflow|github actions|pipeline)\b/i,
+              dependencies: /\b(dependency|dependencies|npm|pip|go mod|dependabot)\b/i,
+            };
+
+            const issue = context.payload.issue;
+            const haystack = `${issue.title}\n${issue.body || ""}`;
+            const labels = Object.entries(rules)
+              .filter(([, pattern]) => pattern.test(haystack))
+              .map(([label]) => label);
+
+            if (labels.length > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels,
+              });
+            }
